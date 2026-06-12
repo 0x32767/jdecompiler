@@ -1,3 +1,4 @@
+from pprint import pformat
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Self, Optional
@@ -8,7 +9,7 @@ class ConstantPool:
         self._enteries = enteries
 
     def __str__(self):
-        return f"{type(self).__name__}({self._enteries})"
+        return f"{type(self).__name__}({pformat(self.enteries)})"
 
     def __repr__(self):
         return str(self)
@@ -34,6 +35,9 @@ class ConstantPool:
 
             if tag == 7: # class info
                 enteries.append(("CLASS_INFO", 0, JavaClassFile.read_u2(buffer)))
+
+            elif tag == 8: # String
+                enteries.append(("STRING", 0, JavaClassFile.read_u2(buffer)))
 
             elif tag == 9: # field ref
                 enteries.append(("FIELD_REF", JavaClassFile.read_u2(buffer), JavaClassFile.read_u2(buffer)))
