@@ -144,67 +144,78 @@ class InnerClassesAttribute:
 
 @dataclass
 class StackMapTableAttribute:
+    stack_frames: list
+
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        # TODO calculate the stack layout given the function descriptor as too
         num_frames = JavaClassFile.read_u2(buffer)
 
-        return [cls.read_frame(buffer, constant_pool) for _ in range(num_frames)]
+        frames: list = []
+        for _ in range(num_frames):
+            tag = JavaClassFile.read_u1(buffer)
 
-    @staticmethod
-    def read_frame(buffer, constant_pool):
-        tag = JavaClassFile.read_u1(buffer)
+            if 0 <= tag <= 63:
+                frames.append("SAME FRAME")
 
-        if 0 <= tag <= 63:
-            return "SAME FRAME"
-
-        elif 64 <= tag <= 127:
-            return StackMapTableAttribute._read_verification_type_info(
-                buffer, constant_pool
-            )
-
-        elif 128 <= tag <= 246:
-            raise NotImplementedError
-
-        elif tag == 247:
-            offset_delta = JavaClassFile.read_u2(buffer)
-            return offset_delta, StackMapTableAttribute._read_verification_type_info(
-                buffer, constant_pool
-            )
-
-        elif 248 <= tag <= 250:
-            offset_delta = JavaClassFile.read_u2(buffer)
-
-        elif tag == 251:
-            offset_delta = JavaClassFile.read_u2(buffer)
-
-        elif 252 <= tag <= 254:
-            offset_delta = JavaClassFile.read_u2(buffer)
-            locals = [
-                StackMapTableAttribute._read_verification_type_info(
-                    buffer, constant_pool
+            elif 64 <= tag <= 127:
+                frames.append(
+                    StackMapTableAttribute._read_verification_type_info(
+                        buffer, constant_pool
+                    )
                 )
-                for _ in range(tag - 251)
-            ]
 
-        elif tag == 255:
-            offset_delta = JavaClassFile.read_u2(buffer)
-            num_locals = JavaClassFile.read_u2(buffer)
-            locals = [
-                StackMapTableAttribute._read_verification_type_info(
-                    buffer, constant_pool
-                )
-                for _ in range(num_locals)
-            ]
-            num_tack_items = JavaClassFile.read_u2(buffer)
-            locals = [
-                StackMapTableAttribute._read_verification_type_info(
-                    buffer, constant_pool
-                )
-                for _ in range(num_tack_items)
-            ]
+            elif 128 <= tag <= 246:
+                raise NotImplementedError
 
-        else:
-            raise ValueError
+            elif tag == 247:
+                offset_delta = JavaClassFile.read_u2(buffer)
+                frames.append(
+                    (
+                        offset_delta,
+                        StackMapTableAttribute._read_verification_type_info(
+                            buffer, constant_pool
+                        ),
+                    )
+                )
+
+            elif 248 <= tag <= 250:
+                offset_delta = JavaClassFile.read_u2(buffer)
+                frames.append(offset_delta)
+
+            elif tag == 251:
+                offset_delta = JavaClassFile.read_u2(buffer)
+
+            elif 252 <= tag <= 254:
+                offset_delta = JavaClassFile.read_u2(buffer)
+                locals = [
+                    StackMapTableAttribute._read_verification_type_info(
+                        buffer, constant_pool
+                    )
+                    for _ in range(tag - 251)
+                ]
+
+            elif tag == 255:
+                offset_delta = JavaClassFile.read_u2(buffer)
+                num_locals = JavaClassFile.read_u2(buffer)
+                locals = [
+                    StackMapTableAttribute._read_verification_type_info(
+                        buffer, constant_pool
+                    )
+                    for _ in range(num_locals)
+                ]
+                num_tack_items = JavaClassFile.read_u2(buffer)
+                locals = [
+                    StackMapTableAttribute._read_verification_type_info(
+                        buffer, constant_pool
+                    )
+                    for _ in range(num_tack_items)
+                ]
+
+            else:
+                raise ValueError
+
+        return cls(frames)
 
     @staticmethod
     def _read_verification_type_info(buffer, constant_pool):
