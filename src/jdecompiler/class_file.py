@@ -5,7 +5,7 @@ from typing import Any, Self, Optional
 
 
 class ConstantPool:
-    def __init__(self, enteries: list[tuple[str, Any, Any]]):
+    def __init__(self, enteries: dict[int, tuple[str, Any, Any]]):
         self._enteries = enteries
 
     def __str__(self):
@@ -15,11 +15,11 @@ class ConstantPool:
         return str(self)
 
     def get(self, index):
-        return self._enteries[index-1]
+        return self._enteries[index]
 
     def resolve_class_info(self, index):
         t, junk, idx = self.get(index)
-        assert t == "CLASS_INFO"
+        assert t == "CLASS_INFO", str(self.get(index))
         return self.get(idx)
 
     @property
@@ -28,32 +28,82 @@ class ConstantPool:
 
     @classmethod
     def from_buffer(cls, buffer: BytesIO, count: int):
-        enteries: list[tuple[str, Any, Any]] = []
+        enteries: dict[int, tuple[str, Any, Any]] = {}
 
-        for _ in range(count):
+        key = 0
+        while key < count:
+            key += 1
             tag = JavaClassFile.read_u1(buffer)
 
-            if tag == 7: # class info
-                enteries.append(("CLASS_INFO", 0, JavaClassFile.read_u2(buffer)))
-
-            elif tag == 8: # String
-                enteries.append(("STRING", 0, JavaClassFile.read_u2(buffer)))
-
-            elif tag == 9: # field ref
-                enteries.append(("FIELD_REF", JavaClassFile.read_u2(buffer), JavaClassFile.read_u2(buffer)))
-
-            elif tag == 10: # method ref
-                enteries.append(("METHOD_REF", JavaClassFile.read_u2(buffer), JavaClassFile.read_u2(buffer)))
-
-            elif tag == 11: # Interfacemethod ref
-                enteries.append(("INTERFACE_REF", JavaClassFile.read_u2(buffer), JavaClassFile.read_u2(buffer)))
-
-            elif tag == 12: # name and type ref
-                enteries.append(("NAMEANDTYPE_REF", JavaClassFile.read_u2(buffer), JavaClassFile.read_u2(buffer)))
-
-            elif tag == 1: # UTF-8
+            if tag == 1:
+                # Reads a UTF-8 String
                 length = JavaClassFile.read_u2(buffer)
-                enteries.append(("UTF-8", 0, buffer.read(length)))
+                enteries[key] = ("UTF-8", 0, buffer.read(length))
+
+            elif tag == 6:
+                # Reads a number of type double
+                enteries[key] = (
+                    "DOUBLE",
+                    JavaClassFile.read_u4(buffer),
+                    JavaClassFile.read_u4(buffer),
+                )
+                # This entery taks up two constant pool enteries
+                # so the key is incremented here
+                key += 1
+
+            elif tag == 7:
+                # Class info contains a string with the name of the class
+                enteries[key] = ("CLASS_INFO", None, JavaClassFile.read_u2(buffer))
+
+            elif tag == 8:
+                # String points to a UTF-8 string
+                enteries[key] = ("STRING", None, JavaClassFile.read_u2(buffer))
+
+            elif tag == 9:
+                # Points to a class and field belonging to that class
+                enteries[key] = (
+                    "FIELD_REF",
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == 10:
+                # Points to a class and method belonging to that class
+                enteries[key] = (
+                    "METHOD_REF",
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == 11:
+                # Points to a class and interface used in that class
+                enteries[key] = (
+                    "INTERFACE_REF",
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == 12:
+                # Points to a string and type
+                enteries[key] = (
+                    "NAME_AND_TYPE_REF",
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == 15:
+                enteries[key] = (
+                    "METHOD_HANDLE",
+                    JavaClassFile.read_u1(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == 18:
+                enteries[key] = (
+                    "INVOKE_DYNAMIC",
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
 
             else:
                 raise NotImplementedError(tag)
@@ -69,9 +119,13 @@ class Attribute:
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         name_index = JavaClassFile.read_u2(buffer)
+        name_type, _, name = constant_pool.get(name_index)
+        assert name_type == "UTF-8"
+
         length = JavaClassFile.read_u4(buffer)
         data = buffer.read(length)
-        return cls(name=constant_pool.get(name_index), info=data)
+
+        return cls(name=name, info=data)
 
 
 @dataclass
@@ -84,8 +138,13 @@ class Method:
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         access_flags = JavaClassFile.read_u2(buffer)
-        name = constant_pool.get(JavaClassFile.read_u2(buffer))
-        descriptor = constant_pool.get(JavaClassFile.read_u2(buffer))
+
+        name_type, _, name = constant_pool.get(JavaClassFile.read_u2(buffer))
+        assert name_type == "UTF-8"
+
+        name_type, _, descriptor = constant_pool.get(JavaClassFile.read_u2(buffer))
+        assert name_type == "UTF-8"
+
         attribute_count = JavaClassFile.read_u2(buffer)
 
         attributes = []
@@ -96,12 +155,13 @@ class Method:
             access_flags=access_flags,
             name=name,
             descriptor=descriptor,
-            attributes=attributes
+            attributes=attributes,
         )
+
 
 @dataclass
 class JavaClassFile:
-    magic: bytes # magic number at start of java class file must be 0xCAFEBABE
+    magic: bytes  # magic number at start of java class file must be 0xCAFEBABE
     minor_version: int
     major_version: int
     constant_pool: list
@@ -131,15 +191,15 @@ class JavaClassFile:
             return cls.from_buffer(f)
 
     @classmethod
-    def from_buffer(cls, buffer: BytesIO) -> Self:
+    def from_buffer(cls, buffer) -> Self:
         magic = buffer.read(4)
 
         minor_version = cls.read_u2(buffer)
         major_version = cls.read_u2(buffer)
 
         constant_pool_count = cls.read_u2(buffer)
-        constant_pool = ConstantPool.from_buffer(buffer, count=constant_pool_count-1)
-        
+        constant_pool = ConstantPool.from_buffer(buffer, count=constant_pool_count - 1)
+
         access_flags = cls.read_u2(buffer)
         this_class = constant_pool.resolve_class_info(cls.read_u2(buffer))
         super_class = constant_pool.resolve_class_info(cls.read_u2(buffer))
@@ -159,7 +219,6 @@ class JavaClassFile:
         for _ in range(methods_count):
             methods.append(Method.from_buffer_and_pool(buffer, constant_pool))
 
-        
         attributes_count = cls.read_u2(buffer)
         attributes = []
         for _ in range(attributes_count):
@@ -176,6 +235,5 @@ class JavaClassFile:
             interfaces=interfaces,
             field_info=fields,
             methods=methods,
-            attributes=attributes
+            attributes=attributes,
         )
-
