@@ -1,3 +1,4 @@
+import pprint
 from dataclasses import dataclass
 from enum import IntEnum
 from io import BytesIO
@@ -25,20 +26,239 @@ class ConstantType(IntEnum):
 
 
 @dataclass
-class Attribute:
-    name: str
-    info: bytes
+class CodeAttribute:
+    max_stack: int
+    max_locals: int
+    code: bytes
+    exception_table: list
+    attributes: list
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
-        name_index = JavaClassFile.read_u2(buffer)
-        name_type, _, name = constant_pool[name_index]
-        assert name_type == ConstantType.UTF_8
+        max_stack = JavaClassFile.read_u2(buffer)
+        max_locals = JavaClassFile.read_u2(buffer)
+        code_length = JavaClassFile.read_u4(buffer)
+        code = buffer.read(code_length)
+        exception_table_length = JavaClassFile.read_u2(buffer)
 
-        length = JavaClassFile.read_u4(buffer)
-        data = buffer.read(length)
+        exceptions = []
+        for _ in range(exception_table_length):
+            start_pc = JavaClassFile.read_u2(buffer)
+            end_pc = JavaClassFile.read_u2(buffer)
+            handler_pc = JavaClassFile.read_u2(buffer)
+            catch_type = JavaClassFile.read_u2(buffer)
+            exceptions.append(
+                (
+                    start_pc,
+                    end_pc,
+                    handler_pc,
+                    catch_type,
+                )
+            )
 
-        return cls(name=name, info=data)
+        attribute_count = JavaClassFile.read_u2(buffer)
+        attributes = [
+            read_attribute(buffer, constant_pool) for _ in range(attribute_count)
+        ]
+
+        return cls(max_stack, max_locals, code, exceptions, attributes)
+
+
+@dataclass
+class LineNumberTableAttribute:
+    line_numbers: list[tuple[int, int]]
+
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        num_enteries = JavaClassFile.read_u2(buffer)
+        line_numbers = []
+
+        for _ in range(num_enteries):
+            start_pc = JavaClassFile.read_u2(buffer)
+            end_pc = JavaClassFile.read_u2(buffer)
+            line_numbers.append((start_pc, end_pc))
+
+        return cls(line_numbers)
+
+
+@dataclass
+class SourceFileAttribute:
+    name: str
+
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        source_file_index = JavaClassFile.read_u2(buffer)
+        constant_type, _, data = constant_pool[source_file_index]
+        assert constant_type == ConstantType.UTF_8
+
+        return cls(data)
+
+
+@dataclass
+class BootstrapMethodsAttribute:
+    bootstrap_methods: list
+
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        num_bootstrap_methods = JavaClassFile.read_u2(buffer)
+
+        bootstrap_methods = []
+        for _ in range(num_bootstrap_methods):
+            bootstrap_method_ref = JavaClassFile.read_u2(buffer)
+            num_bootstrap_args = JavaClassFile.read_u2(buffer)
+            bootstrap_methods.append(
+                [
+                    bootstrap_method_ref,
+                    [JavaClassFile.read_u2(buffer) for _ in range(num_bootstrap_args)],
+                ]
+            )
+
+        return cls(bootstrap_methods)
+
+
+@dataclass
+class InnerClassesAttribute:
+    inner_classes: list
+
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        num_inner_classes = JavaClassFile.read_u2(buffer)
+
+        inner_classes = []
+        for _ in range(num_inner_classes):
+            inner_class_info_index = JavaClassFile.read_u2(buffer)
+            outer_class_info_index = JavaClassFile.read_u2(buffer)
+            inner_name_indx = JavaClassFile.read_u2(buffer)
+            inner_class_class_access_flags = JavaClassFile.read_u2(buffer)
+            inner_classes.append(
+                (
+                    inner_class_info_index,
+                    outer_class_info_index,
+                    inner_name_indx,
+                    inner_class_class_access_flags,
+                )
+            )
+
+        return cls(inner_classes)
+
+
+@dataclass
+class StackMapTableAttribute:
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        num_frames = JavaClassFile.read_u2(buffer)
+
+        return [cls.read_frame(buffer, constant_pool) for _ in range(num_frames)]
+
+    @staticmethod
+    def read_frame(buffer, constant_pool):
+        tag = JavaClassFile.read_u1(buffer)
+
+        if 0 <= tag <= 63:
+            return "SAME FRAME"
+
+        elif 64 <= tag <= 127:
+            return StackMapTableAttribute._read_verification_type_info(
+                buffer, constant_pool
+            )
+
+        elif 128 <= tag <= 246:
+            raise NotImplementedError
+
+        elif tag == 247:
+            offset_delta = JavaClassFile.read_u2(buffer)
+            return offset_delta, StackMapTableAttribute._read_verification_type_info(
+                buffer, constant_pool
+            )
+
+        elif 248 <= tag <= 250:
+            offset_delta = JavaClassFile.read_u2(buffer)
+
+        elif tag == 251:
+            offset_delta = JavaClassFile.read_u2(buffer)
+
+        elif 252 <= tag <= 254:
+            offset_delta = JavaClassFile.read_u2(buffer)
+            locals = [
+                StackMapTableAttribute._read_verification_type_info(
+                    buffer, constant_pool
+                )
+                for _ in range(tag - 251)
+            ]
+
+        elif tag == 255:
+            offset_delta = JavaClassFile.read_u2(buffer)
+            num_locals = JavaClassFile.read_u2(buffer)
+            locals = [
+                StackMapTableAttribute._read_verification_type_info(
+                    buffer, constant_pool
+                )
+                for _ in range(num_locals)
+            ]
+            num_tack_items = JavaClassFile.read_u2(buffer)
+            locals = [
+                StackMapTableAttribute._read_verification_type_info(
+                    buffer, constant_pool
+                )
+                for _ in range(num_tack_items)
+            ]
+
+        else:
+            raise ValueError
+
+    @staticmethod
+    def _read_verification_type_info(buffer, constant_pool):
+        tag = JavaClassFile.read_u1(buffer)
+
+        if tag == 0:
+            return "ITEM_top"
+        elif tag == 1:
+            return "ITEM_Integer"
+        elif tag == 2:
+            return "ITEM_Float"
+        elif tag == 4:
+            return "ITEM_Long"
+        elif tag == 3:
+            return "ITEM_Double"
+        elif tag == 5:
+            return "ITEM_NULL"
+        elif tag == 6:
+            return "ITEM_UninitialisedThis"
+        elif tag == 7:
+            return "ITEM_Object", constant_pool[JavaClassFile.read_u2(buffer)]
+        elif tag == 8:
+            return "ITEM_VeriableInfo", JavaClassFile.read_u2(buffer)
+        else:
+            raise ValueError(tag)
+
+
+def read_attribute(buffer: BytesIO, constant_pool: dict[int, tuple]):
+    name_index = JavaClassFile.read_u2(buffer)
+    name_type, _, name = constant_pool[name_index]
+    assert name_type == ConstantType.UTF_8
+
+    JavaClassFile.read_u4(buffer)  # length of attribute, not needed
+
+    if name == b"Code":
+        return CodeAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    elif name == b"LineNumberTable":
+        return LineNumberTableAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    elif name == b"StackMapTable":
+        return StackMapTableAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    elif name == b"SourceFile":
+        return SourceFileAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    elif name == b"BootstrapMethods":
+        return BootstrapMethodsAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    elif name == b"InnerClasses":
+        return InnerClassesAttribute.from_buffer_and_pool(buffer, constant_pool)
+
+    else:
+        raise NotImplementedError(name)
 
 
 @dataclass
@@ -50,10 +270,11 @@ class Method:
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        # pprint.pprint(constant_pool)
         access_flags = JavaClassFile.read_u2(buffer)
 
         name_type, _, name = constant_pool[JavaClassFile.read_u2(buffer)]
-        assert name_type == ConstantType.UTF_8
+        assert name_type == ConstantType.UTF_8, f"{name_type} {name!r}"
 
         name_type, _, descriptor = constant_pool[JavaClassFile.read_u2(buffer)]
         assert name_type == ConstantType.UTF_8
@@ -62,7 +283,7 @@ class Method:
 
         attributes = []
         for _ in range(attribute_count):
-            attributes.append(Attribute.from_buffer_and_pool(buffer, constant_pool))
+            attributes.append(read_attribute(buffer, constant_pool))
 
         return cls(
             access_flags=access_flags,
@@ -231,7 +452,7 @@ class JavaClassFile:
         attributes_count = cls.read_u2(buffer)
         attributes = []
         for _ in range(attributes_count):
-            attributes.append(Attribute.from_buffer_and_pool(buffer, constant_pool))
+            attributes.append(read_attribute(buffer, constant_pool))
 
         return cls(
             magic=magic,
