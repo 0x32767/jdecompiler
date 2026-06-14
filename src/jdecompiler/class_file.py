@@ -25,6 +25,40 @@ class ConstantType(IntEnum):
     INVOKE_DYNAMIC = 18
 
 
+class Opcode(IntEnum):
+    NOP = 0
+    ICONST_0 = 0x03
+    ICONST_1 = 0x04
+    ICONST_5 = 0x08
+    LDC = 0x12
+    LDC2_W = 0x14
+    ILOAD_2 = 0x1C
+    ILOAD_3 = 0x1D
+    ALOAD_0 = 0x2A
+    ASTORE = 0x3A
+    ISTORE_1 = 0x3C
+    ISTORE_2 = 0x3D
+    ISTORE_3 = 0x3E
+    LSTORE_1 = 0x40
+    ASTORE_0 = 0x4B
+    DUPLICATE = 0x59
+    IADD = 0x60
+    DMUL = 0x6B
+    DOUBLE_TO_INT = 0x8E
+    RETURN = 0xB1
+    GET_STATIC = 0xB2
+    INVOKE_VIRTUAL = 0xB6
+    INVOKE_SPECIAL = 0xB7
+    INVOKE_STATIC = 0xB8
+    INVOKE_DYNAMIC = 0xBA
+    NEW = 0xBB
+
+
+@dataclass
+class Instruction:
+    opeocde: Opcode
+
+
 @dataclass
 class CodeAttribute:
     max_stack: int
@@ -38,7 +72,7 @@ class CodeAttribute:
         max_stack = JavaClassFile.read_u2(buffer)
         max_locals = JavaClassFile.read_u2(buffer)
         code_length = JavaClassFile.read_u4(buffer)
-        code = buffer.read(code_length)
+        code = cls.read_code(buffer, code_length)
         exception_table_length = JavaClassFile.read_u2(buffer)
 
         exceptions = []
@@ -62,6 +96,110 @@ class CodeAttribute:
         ]
 
         return cls(max_stack, max_locals, code, exceptions, attributes)
+
+    @staticmethod
+    def read_code(buffer, length):
+        instructions = []
+
+        current = 0
+        while current < length:
+            instruction = JavaClassFile.read_u1(buffer)
+            current += 1
+
+            if instruction == Opcode.NOP:
+                instructions.append(Instruction(Opcode.NOP))
+            elif instruction == Opcode.ALOAD_0:
+                instructions.append(Instruction(Opcode.ALOAD_0))
+            elif instruction == Opcode.RETURN:
+                instructions.append(Instruction(Opcode.RETURN))
+            elif instruction == Opcode.DMUL:
+                instructions.append(Instruction(Opcode.DMUL))
+            elif instruction == Opcode.DOUBLE_TO_INT:
+                instructions.append(Instruction(Opcode.DOUBLE_TO_INT))
+            elif instruction == Opcode.IADD:
+                instructions.append(Instruction(Opcode.IADD))
+            elif instruction == Opcode.ISTORE_1:
+                instructions.append(Instruction(Opcode.ISTORE_1))
+            elif instruction == Opcode.ISTORE_2:
+                instructions.append(Instruction(Opcode.ISTORE_2))
+            elif instruction == Opcode.ICONST_5:
+                instructions.append(Instruction(Opcode.ICONST_5))
+            elif instruction == Opcode.ILOAD_2:
+                instructions.append(Instruction(Opcode.ILOAD_2))
+            elif instruction == Opcode.ILOAD_3:
+                instructions.append(Instruction(Opcode.ILOAD_3))
+            elif instruction == Opcode.INVOKE_DYNAMIC:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                zero_byte_1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                zero_byte_2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.INVOKE_DYNAMIC))
+            elif instruction == Opcode.INVOKE_SPECIAL:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.INVOKE_SPECIAL))
+            elif instruction == Opcode.LDC:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.LDC))
+            elif instruction == Opcode.ASTORE:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.ASTORE))
+            elif instruction == Opcode.LDC2_W:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.LDC2_W))
+            elif instruction == Opcode.INVOKE_STATIC:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.INVOKE_STATIC))
+            elif instruction == Opcode.INVOKE_VIRTUAL:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.INVOKE_VIRTUAL))
+            elif instruction == Opcode.RETURN:
+                instructions.append(Instruction(Opcode.RETURN))
+            elif instruction == Opcode.ISTORE_3:
+                instructions.append(Instruction(Opcode.ISTORE_3))
+            elif instruction == Opcode.DUPLICATE:
+                instructions.append(Instruction(Opcode.DUPLICATE))
+            elif instruction == Opcode.ICONST_1:
+                instructions.append(Instruction(Opcode.ICONST_1))
+            elif instruction == Opcode.ICONST_0:
+                instructions.append(Instruction(Opcode.ICONST_0))
+            elif instruction == Opcode.LSTORE_1:
+                instructions.append(Instruction(Opcode.LSTORE_1))
+            elif instruction == Opcode.ASTORE_0:
+                instructions.append(Instruction(Opcode.ASTORE_0))
+            elif instruction == Opcode.NEW:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.NEW))
+            elif instruction == Opcode.GET_STATIC:
+                idx_byte1 = JavaClassFile.read_u1(buffer)
+                current += 1
+                idx_byte2 = JavaClassFile.read_u1(buffer)
+                current += 1
+                instructions.append(Instruction(Opcode.GET_STATIC))
+            else:
+                raise NotImplementedError(f"{hex(instruction)} {current} {length}")
+
+        return instructions
 
 
 @dataclass
