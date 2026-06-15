@@ -66,15 +66,22 @@ class Instruction:
     opeocde: Opcode
     offset: int
     operands: list
+    line_number: int = 0
 
 
 @dataclass
 class CodeAttribute:
     max_stack: int
     max_locals: int
-    code: bytes
+    instructions: list[Instruction]
     exception_table: list
-    attributes: list
+    attributes: dict
+
+    def set_line_numbers(self, line_numbers: LineNumberTableAttribute):
+        for instruction in self.instructions:
+            instruction.line_number = line_numbers.line_for_instruction_offset(
+                instruction.offset
+            )
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -100,11 +107,14 @@ class CodeAttribute:
             )
 
         attribute_count = JavaClassFile.read_u2(buffer)
-        attributes = [
-            read_attribute(buffer, constant_pool) for _ in range(attribute_count)
-        ]
+        attributes = {}
+        for _ in range(attribute_count):
+            attr_name, attr_data = read_attribute(buffer, constant_pool)
+            attributes[attr_name] = attr_data
 
-        return cls(max_stack, max_locals, code, exceptions, attributes)
+        instance = cls(max_stack, max_locals, code, exceptions, attributes)
+        instance.set_line_numbers(attributes["LineNumberTable"])
+        return instance
 
     @staticmethod
     def read_code(buffer, length, constant_pool):
@@ -282,6 +292,11 @@ class CodeAttribute:
 @dataclass
 class LineNumberTableAttribute:
     line_numbers: list[tuple[int, int]]
+
+    def line_for_instruction_offset(self, instruction_offset):
+        for starting_offset, line_number in reversed(self.line_numbers):
+            if starting_offset >= instruction_offset:
+                return line_number
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -466,22 +481,32 @@ def read_attribute(buffer: BytesIO, constant_pool: dict[int, tuple]):
     JavaClassFile.read_u4(buffer)  # length of attribute, not needed
 
     if name == b"Code":
-        return CodeAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), CodeAttribute.from_buffer_and_pool(buffer, constant_pool)
 
     elif name == b"LineNumberTable":
-        return LineNumberTableAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), LineNumberTableAttribute.from_buffer_and_pool(
+            buffer, constant_pool
+        )
 
     elif name == b"StackMapTable":
-        return StackMapTableAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), StackMapTableAttribute.from_buffer_and_pool(
+            buffer, constant_pool
+        )
 
     elif name == b"SourceFile":
-        return SourceFileAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), SourceFileAttribute.from_buffer_and_pool(
+            buffer, constant_pool
+        )
 
     elif name == b"BootstrapMethods":
-        return BootstrapMethodsAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), BootstrapMethodsAttribute.from_buffer_and_pool(
+            buffer, constant_pool
+        )
 
     elif name == b"InnerClasses":
-        return InnerClassesAttribute.from_buffer_and_pool(buffer, constant_pool)
+        return name.decode(), InnerClassesAttribute.from_buffer_and_pool(
+            buffer, constant_pool
+        )
 
     else:
         raise NotImplementedError(name)
@@ -492,7 +517,7 @@ class Method:
     access_flags: int
     name: str
     descriptor: str
-    attributes: list
+    attributes: dict
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -507,9 +532,10 @@ class Method:
 
         attribute_count = JavaClassFile.read_u2(buffer)
 
-        attributes = []
+        attributes = {}
         for _ in range(attribute_count):
-            attributes.append(read_attribute(buffer, constant_pool))
+            attr_name, attr_data = read_attribute(buffer, constant_pool)
+            attributes[attr_name] = attr_data
 
         return cls(
             access_flags=access_flags,
@@ -531,7 +557,7 @@ class JavaClassFile:
     interfaces: list
     field_info: list
     methods: list
-    attributes: list
+    attributes: dict
 
     @staticmethod
     def read_u4(buffer: BytesIO):
@@ -680,9 +706,10 @@ class JavaClassFile:
             methods.append(Method.from_buffer_and_pool(buffer, constant_pool))
 
         attributes_count = cls.read_u2(buffer)
-        attributes = []
+        attributes = {}
         for _ in range(attributes_count):
-            attributes.append(read_attribute(buffer, constant_pool))
+            attr_name, attr_data = read_attribute(buffer, constant_pool)
+            attributes[attr_name] = attr_data
 
         return cls(
             magic=magic,
