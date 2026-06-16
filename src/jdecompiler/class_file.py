@@ -519,6 +519,54 @@ class Method:
     descriptor: str
     attributes: dict
 
+    @staticmethod
+    def read_descriptor(descriptor_string: str):
+        if descriptor_string[0] != "(":
+            raise ValueError(
+                f"Method descriptor must start with opening bracket, got {descriptor_string!r}"
+            )
+
+        index = 1  # starts at 1 to skip opening paren
+        paramiters = []
+
+        while descriptor_string[index] != ")":
+            degree = 0
+            while descriptor_string[index] == "[":  # param is array
+                index += 1
+                degree += 1
+
+            if descriptor_string[index] == "B":
+                paramiter_type = "byte"
+            elif descriptor_string[index] == "C":
+                paramiter_type = "char"
+            elif descriptor_string[index] == "D":
+                paramiter_type = "double"
+            elif descriptor_string[index] == "F":
+                paramiter_type = "float"
+            elif descriptor_string[index] == "I":
+                paramiter_type = "int"
+            elif descriptor_string[index] == "J":
+                paramiter_type = "long"
+            elif descriptor_string[index] == "S":
+                paramiter_type = "short"
+            elif descriptor_string[index] == "Z":
+                paramiter_type = "boolean"
+            elif descriptor_string[index] == "L":
+                index += 1  # skips the L
+                paramiter_type = ""
+                while descriptor_string[index] != ";":
+                    paramiter_type += descriptor_string[index]
+                    index += 1
+            else:
+                raise NotImplementedError(
+                    f"{descriptor_string} {descriptor_string[index]}"
+                )
+
+            paramiters.append((paramiter_type, degree))
+            index += 1
+
+        return paramiters, descriptor_string[index + 1 :]
+
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
         # pprint.pprint(constant_pool)
@@ -540,7 +588,7 @@ class Method:
         return cls(
             access_flags=access_flags,
             name=name,
-            descriptor=descriptor,
+            descriptor=cls.read_descriptor(descriptor.decode()),
             attributes=attributes,
         )
 
