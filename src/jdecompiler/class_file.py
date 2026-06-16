@@ -295,7 +295,7 @@ class LineNumberTableAttribute:
 
     def line_for_instruction_offset(self, instruction_offset):
         for starting_offset, line_number in reversed(self.line_numbers):
-            if starting_offset >= instruction_offset:
+            if starting_offset <= instruction_offset:
                 return line_number
 
     @classmethod
