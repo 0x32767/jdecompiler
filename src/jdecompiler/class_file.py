@@ -2,6 +2,7 @@ import pprint
 from dataclasses import dataclass
 from enum import IntEnum
 from io import BytesIO
+from io import StringIO
 from pprint import pformat
 from typing import Any
 from typing import Optional
@@ -80,6 +81,10 @@ class Opcode(IntEnum):
     NEW = 0xBB
     CHECK_CAST = 0xC0
 
+    @classmethod
+    def get_name(cls, value):
+        return str(cls._value2member_map_[value].name)
+
 
 @dataclass
 class Instruction:
@@ -88,8 +93,10 @@ class Instruction:
     operands: list
     line_number: int = 0
 
-    def assembly_format(self):
-        return f"{self.line_number:<3} ({self.offset}) {self.opcode} {','.join(map(str, self.operands))}"
+    def nice_print(self):
+        print(
+            f"{self.line_number:<3} ({self.offset}) {Opcode.get_name(self.opcode)} {','.join(map(str, self.operands))}"
+        )
 
 
 @dataclass
@@ -387,6 +394,13 @@ class CodeAttribute:
 
         return instructions
 
+    def nice_print(self):
+        print(f"{self.max_stack=} {self.max_locals=}")
+        for instruction in self.instructions:
+            instruction.nice_print()
+        for _, attr in self.attributes.items():
+            attr.nice_print()
+
 
 @dataclass
 class LineNumberTableAttribute:
@@ -408,6 +422,10 @@ class LineNumberTableAttribute:
             line_numbers.append((start_pc, end_pc))
 
         return cls(line_numbers)
+
+    def nice_print(self):
+        for offset, line in self.line_numbers:
+            print(f"{offset} -> {line}")
 
 
 @dataclass
@@ -571,6 +589,10 @@ class StackMapTableAttribute:
         else:
             raise ValueError(tag)
 
+    def nice_print(self):
+        # TODO once implemented
+        ...
+
 
 def read_attribute(buffer: BytesIO, constant_pool: dict[int, tuple]):
     name_index = JavaClassFile.read_u2(buffer)
@@ -690,6 +712,11 @@ class Method:
             descriptor=cls.read_descriptor(descriptor.decode()),
             attributes=attributes,
         )
+
+    def nice_print(self):
+        print(f"{self.access_flags} {self.name} {self.descriptor}")
+        for attr_name, attribute in self.attributes.items():
+            attribute.nice_print()
 
 
 @dataclass
