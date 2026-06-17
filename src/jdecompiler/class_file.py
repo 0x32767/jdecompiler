@@ -136,9 +136,10 @@ class Instruction:
     operands: list
     line_number: int = 0
 
-    def nice_print(self):
+    def nice_print(self, indent=0):
         print(
-            f"{self.line_number:<3} ({self.offset}) {Opcode.get_name(self.opcode)} {','.join(map(str, self.operands))}"
+            " " * (indent + 2)
+            + f"{self.line_number:<3} ({self.offset:<4}) {Opcode.get_name(self.opcode):<20} {','.join(map(str, self.operands))}"
         )
 
 
@@ -284,7 +285,11 @@ class CodeAttribute:
                     Instruction(
                         Opcode.INVOKE_SPECIAL,
                         current,
-                        [constant_pool[idx_byte1 << 8 | idx_byte2]],
+                        [
+                            const_pool_get_method_ref(
+                                constant_pool, idx_byte1 << 8 | idx_byte2
+                            )
+                        ],
                     )
                 )
                 current += 2
@@ -463,12 +468,14 @@ class CodeAttribute:
 
         return instructions
 
-    def nice_print(self):
-        print(f"{self.max_stack=} {self.max_locals=}")
+    def nice_print(self, indent=0):
+        print(" " * indent + f"Code Attribute {self.max_stack=} {self.max_locals=}")
+
         for instruction in self.instructions:
-            instruction.nice_print()
+            instruction.nice_print(indent=indent + 2)
+
         for _, attr in self.attributes.items():
-            attr.nice_print()
+            attr.nice_print(indent=indent + 2)
 
 
 @dataclass
@@ -492,9 +499,10 @@ class LineNumberTableAttribute:
 
         return cls(line_numbers)
 
-    def nice_print(self):
+    def nice_print(self, indent=0):
+        print(" " * indent + "Line Number Table")
         for offset, line in self.line_numbers:
-            print(f"{offset} -> {line}")
+            print(" " * (indent + 2) + f"{offset} -> {line}")
 
 
 @dataclass
@@ -779,15 +787,15 @@ class Method:
 
         return cls(
             access_flags=access_flags,
-            name=name,
+            name=name.decode(),
             descriptor=cls.read_descriptor(descriptor.decode()),
             attributes=attributes,
         )
 
-    def nice_print(self):
-        print(f"{self.access_flags} {self.name} {self.descriptor}")
+    def nice_print(self, indent=0):
+        print(" " * indent + f"{self.access_flags} {self.name} {self.descriptor}")
         for attr_name, attribute in self.attributes.items():
-            attribute.nice_print()
+            attribute.nice_print(indent=indent + 2)
 
 
 @dataclass
