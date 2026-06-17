@@ -86,6 +86,49 @@ class Opcode(IntEnum):
         return str(cls._value2member_map_[value].name)
 
 
+def const_pool_get_utf8(constant_pool, index):
+    data_type, _, value = constant_pool[index]
+    assert data_type == ConstantType.UTF_8
+    return value.decode()
+
+
+def const_pool_get_class_ref(constant_pool, index):
+    data_type, _, value = constant_pool[index]
+    assert data_type == ConstantType.CLASS
+    return const_pool_get_utf8(constant_pool, value)
+
+
+def const_pool_get_name_and_type(constant_pool, index):
+    data_type, name_index, descriptor_index = constant_pool[index]
+    assert data_type == ConstantType.NAME_AND_TYPE
+    return (
+        const_pool_get_utf8(constant_pool, name_index)
+        + " type("
+        + const_pool_get_utf8(constant_pool, descriptor_index)
+        + ")"
+    )
+
+
+def const_pool_get_field_ref(constant_pool, index):
+    data_type, class_index, name_and_type = constant_pool[index]
+    assert data_type == ConstantType.FIELD_REF
+    return (
+        const_pool_get_class_ref(constant_pool, class_index)
+        + "."
+        + const_pool_get_name_and_type(constant_pool, name_and_type)
+    )
+
+
+def const_pool_get_method_ref(constant_pool, index):
+    data_type, class_index, name_and_type = constant_pool[index]
+    assert data_type == ConstantType.METHOD_REF
+    return (
+        const_pool_get_class_ref(constant_pool, class_index)
+        + "."
+        + const_pool_get_name_and_type(constant_pool, name_and_type)
+    )
+
+
 @dataclass
 class Instruction:
     opcode: Opcode
@@ -112,6 +155,18 @@ class CodeAttribute:
             instruction.line_number = line_numbers.line_for_instruction_offset(
                 instruction.offset
             )
+
+    def set_bootstrap_methods(self, constant_pool, bootstrap_methods):
+        for instruction in self.instructions:
+            if instruction.opcode != Opcode.INVOKE_DYNAMIC:
+                continue
+
+            ((op_type, bootstrap_idx, method_descriptor),) = instruction.operands
+            assert op_type == ConstantType.INVOKE_DYNAMIC
+            instruction.operands = [
+                bootstrap_methods.get(bootstrap_idx),
+                const_pool_get_name_and_type(constant_pool, method_descriptor),
+            ]
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -341,7 +396,11 @@ class CodeAttribute:
                     Instruction(
                         Opcode.INVOKE_VIRTUAL,
                         current,
-                        [constant_pool[idx_byte1 << 8 | idx_byte2]],
+                        [
+                            const_pool_get_method_ref(
+                                constant_pool, idx_byte1 << 8 | idx_byte2
+                            )
+                        ],
                     )
                 )
                 current += 2
@@ -372,7 +431,13 @@ class CodeAttribute:
                 idx_byte2 = JavaClassFile.read_u1(buffer)
                 instructions.append(
                     Instruction(
-                        Opcode.NEW, current, [constant_pool[idx_byte1 << 8 | idx_byte2]]
+                        Opcode.NEW,
+                        current,
+                        [
+                            const_pool_get_class_ref(
+                                constant_pool, idx_byte1 << 8 | idx_byte2
+                            )
+                        ],
                     )
                 )
                 current += 2
@@ -383,7 +448,11 @@ class CodeAttribute:
                     Instruction(
                         Opcode.GET_STATIC,
                         current,
-                        [constant_pool[idx_byte1 << 8 | idx_byte2]],
+                        [
+                            const_pool_get_field_ref(
+                                constant_pool, idx_byte1 << 8 | idx_byte2
+                            )
+                        ],
                     )
                 )
                 current += 2
@@ -444,6 +513,9 @@ class SourceFileAttribute:
 @dataclass
 class BootstrapMethodsAttribute:
     bootstrap_methods: list
+
+    def get(self, index):
+        return self.bootstrap_methods[index]
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -690,7 +762,6 @@ class Method:
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
-        # pprint.pprint(constant_pool)
         access_flags = JavaClassFile.read_u2(buffer)
 
         name_type, _, name = constant_pool[JavaClassFile.read_u2(buffer)]
@@ -884,6 +955,12 @@ class JavaClassFile:
         for _ in range(attributes_count):
             attr_name, attr_data = read_attribute(buffer, constant_pool)
             attributes[attr_name] = attr_data
+
+        # set bootstrap
+        for method in methods:
+            method.attributes["Code"].set_bootstrap_methods(
+                constant_pool, attributes["BootstrapMethods"]
+            )
 
         return cls(
             magic=magic,
