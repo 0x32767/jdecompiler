@@ -9,6 +9,44 @@ from typing import Optional
 from typing import Self
 
 
+class ClassAccessFlags(IntEnum):
+    ACC_PUBLIC = 0x0001
+    ACC_FINAL = 0x0010
+    ACC_SUPER = 0x0020
+    ACC_INTERFACE = 0x0200
+    ACC_ABSTRACT = 0x0400
+    ACC_SYNTHETIC = 0x1000
+    ACC_ANNOTATION = 0x2000
+    ACC_ENUM = 0x4000
+
+    @classmethod
+    def parse_flags(cls, flags):
+        return [
+            name for name, value in cls._value2member_map_.items() if flags & value != 0
+        ]
+
+
+class MethodAccessFlags(IntEnum):
+    ACC_PUBLIC = 0x0001
+    ACC_PRIVATE = 0x0002
+    ACC_PROTECTED = 0x0004
+    ACC_STATIC = 0x0008
+    ACC_FINAL = 0x0010
+    ACC_SYNCHRONIZED = 0x0020
+    ACC_BRIDGE = 0x0040
+    ACC_VARARGS = 0x0080
+    ACC_NATIVE = 0x0100
+    ACC_ABSTRACT = 0x0400
+    ACC_STRICT = 0x0800
+    ACC_SYNTHETIC = 0x1000
+
+    @classmethod
+    def parse_flags(cls, flags):
+        return [
+            name for value, name in cls._value2member_map_.items() if flags & value != 0
+        ]
+
+
 class ConstantType(IntEnum):
     UTF_8 = 1
     INTEGER = 3
@@ -715,7 +753,7 @@ def read_attribute(buffer: BytesIO, constant_pool: dict[int, tuple]):
 
 @dataclass
 class Method:
-    access_flags: int
+    access_flags: list
     name: str
     descriptor: str
     attributes: dict
@@ -786,7 +824,7 @@ class Method:
             attributes[attr_name] = attr_data
 
         return cls(
-            access_flags=access_flags,
+            access_flags=MethodAccessFlags.parse_flags(access_flags),
             name=name.decode(),
             descriptor=cls.read_descriptor(descriptor.decode()),
             attributes=attributes,
