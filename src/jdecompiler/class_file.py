@@ -1003,10 +1003,11 @@ class JavaClassFile:
             attributes[attr_name] = attr_data
 
         # set bootstrap
-        for method in methods:
-            method.attributes["Code"].set_bootstrap_methods(
-                constant_pool, attributes["BootstrapMethods"]
-            )
+        if "BootstrapMethods" in attributes:
+            for method in methods:
+                method.attributes["Code"].set_bootstrap_methods(
+                    constant_pool, attributes["BootstrapMethods"]
+                )
 
         return cls(
             magic=magic,
