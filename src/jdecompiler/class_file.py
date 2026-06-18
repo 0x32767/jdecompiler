@@ -47,6 +47,24 @@ class MethodAccessFlags(IntEnum):
         ]
 
 
+class FieldAccessFlags(IntEnum):
+    ACC_PUBLIC = 0x0001
+    ACC_PRIVATE = 0x0002
+    ACC_PROTECTED = 0x0004
+    ACC_STATIC = 0x0008
+    ACC_FINAL = 0x0010
+    ACC_VOLATILE = 0x0040
+    ACC_TRANSIENT = 0x0080
+    ACC_SYNTHETIC = 0x1000
+    ACC_ENUM = 0x4000
+
+    @classmethod
+    def parse_flags(cls, flags):
+        return [
+            name for value, name in cls._value2member_map_.items() if flags & value != 0
+        ]
+
+
 class ConstantType(IntEnum):
     UTF_8 = 1
     INTEGER = 3
@@ -873,6 +891,74 @@ class Method:
 
 
 @dataclass
+class Field:
+    access_flags: list
+    name: str
+    descriptor: str
+    attributes: dict
+
+    @classmethod
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+        access_flags = JavaClassFile.read_u2(buffer)
+        name_indx = JavaClassFile.read_u2(buffer)
+        descriptor_index = JavaClassFile.read_u2(buffer)
+        attribute_count = JavaClassFile.read_u2(buffer)
+
+        attributes = {}
+        for _ in range(attribute_count):
+            attr_name, attr_data = read_attribute(buffer, constant_pool)
+            attributes[attr_name] = attr_data
+
+        return cls(
+            access_flags=FieldAccessFlags.parse_flags(access_flags),
+            descriptor=cls.read_descriptor(
+                const_pool_get_utf8(constant_pool, descriptor_index)
+            ),
+            name=const_pool_get_utf8(constant_pool, name_indx),
+            attributes=attributes,
+        )
+
+    @staticmethod
+    def read_descriptor(descriptor: str):
+        if descriptor[0] == "B":
+            return "byte"
+        elif descriptor[0] == "C":
+            return "char"
+        elif descriptor[0] == "D":
+            return "double"
+        elif descriptor[0] == "F":
+            return "float"
+        elif descriptor[0] == "I":
+            return "int"
+        elif descriptor[0] == "J":
+            return "long"
+        elif descriptor[0] == "S":
+            return "short"
+        elif descriptor[0] == "Z":
+            return "boolean"
+        else:
+            raise NotImplementedError
+
+    def recreate_signature(self):
+        access_flags = " ".join(
+            {
+                MethodAccessFlags.ACC_PUBLIC: "public",
+                MethodAccessFlags.ACC_PRIVATE: "private",
+                MethodAccessFlags.ACC_PROTECTED: "protcted",
+                MethodAccessFlags.ACC_STATIC: "static",
+                MethodAccessFlags.ACC_FINAL: "final",
+                MethodAccessFlags.ACC_SYNCHRONIZED: "synchronised",
+                MethodAccessFlags.ACC_ABSTRACT: "abstract",
+            }[flag]
+            for flag in self.access_flags
+        )
+        return f"{access_flags} {self.descriptor} {self.name}"
+
+    def nice_print(self, indent=2):
+        print(" " * indent + self.recreate_signature())
+
+
+@dataclass
 class JavaClassFile:
     magic: bytes  # magic number at start of java class file must be 0xCAFEBABE
     minor_version: int
@@ -882,7 +968,7 @@ class JavaClassFile:
     this_class: int
     super_class: int
     interfaces: list
-    field_info: list
+    fields: list
     methods: list
     attributes: dict
 
@@ -1025,7 +1111,7 @@ class JavaClassFile:
         fields_count = cls.read_u2(buffer)
         fields: list = []
         for _ in range(fields_count):
-            raise NotImplementedError
+            fields.append(Field.from_buffer_and_pool(buffer, constant_pool))
 
         methods_count = cls.read_u2(buffer)
         methods = []
@@ -1054,12 +1140,16 @@ class JavaClassFile:
             this_class=this_class,
             super_class=super_class,
             interfaces=interfaces,
-            field_info=fields,
+            fields=fields,
             methods=methods,
             attributes=attributes,
         )
 
     def nice_print(self):
         print("Class File: " + self.attributes["SourceFile"].name)
+
+        for field in self.fields:
+            field.nice_print(indent=2)
+
         for method in self.methods:
             method.nice_print(indent=2)
