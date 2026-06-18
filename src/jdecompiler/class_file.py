@@ -804,7 +804,40 @@ class Method:
             paramiters.append((paramiter_type, degree))
             index += 1
 
-        return paramiters, descriptor_string[index + 1 :]
+        return_type = descriptor_string[index + 1 :]
+
+        if return_type == "V":
+            return_type = "void"
+        else:
+            raise NotImplementedError
+
+        return paramiters, return_type
+
+    @staticmethod
+    def recreate_signature(
+        access_flags: list[MethodAccessFlags], name: str, descriptor
+    ):
+        access = " ".join(
+            [
+                {
+                    MethodAccessFlags.ACC_PUBLIC: "public",
+                    MethodAccessFlags.ACC_PRIVATE: "private",
+                    MethodAccessFlags.ACC_PROTECTED: "protcted",
+                    MethodAccessFlags.ACC_STATIC: "static",
+                    MethodAccessFlags.ACC_FINAL: "final",
+                    MethodAccessFlags.ACC_SYNCHRONIZED: "synchronised",
+                    MethodAccessFlags.ACC_ABSTRACT: "abstract",
+                }[flag]
+                for flag in access_flags
+            ]
+        )
+
+        paramiters, return_type = descriptor
+        arguments = ", ".join(
+            param_type + "[]" * degree for param_type, degree in paramiters
+        )
+
+        return f"{access} {return_type} {name}({arguments})"
 
     @classmethod
     def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
@@ -831,7 +864,10 @@ class Method:
         )
 
     def nice_print(self, indent=0):
-        print(" " * indent + f"{self.access_flags} {self.name} {self.descriptor}")
+        print(
+            " " * indent
+            + self.recreate_signature(self.access_flags, self.name, self.descriptor)
+        )
         for attr_name, attribute in self.attributes.items():
             attribute.nice_print(indent=indent + 2)
 
