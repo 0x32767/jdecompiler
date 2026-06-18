@@ -707,7 +707,7 @@ class StackMapTableAttribute:
         else:
             raise ValueError(tag)
 
-    def nice_print(self):
+    def nice_print(self, indent=0):
         # TODO once implemented
         ...
 
@@ -842,7 +842,7 @@ class JavaClassFile:
     minor_version: int
     major_version: int
     constant_pool: list
-    access_flags: int
+    access_flags: list
     this_class: int
     super_class: int
     interfaces: list
@@ -973,7 +973,7 @@ class JavaClassFile:
         constant_pool_count = cls.read_u2(buffer)
         constant_pool = cls.read_constant_pool(buffer, constant_pool_count - 1)
 
-        access_flags = cls.read_u2(buffer)
+        access_flags = ClassAccessFlags.parse_flags(cls.read_u2(buffer))
 
         data_type, _, this_class = constant_pool.get(cls.read_u2(buffer))
         assert data_type == ConstantType.CLASS
