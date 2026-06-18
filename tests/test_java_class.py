@@ -6,6 +6,5 @@ from jdecompiler.class_file import JavaClassFile
 def test_creation():
     file = JavaClassFile.from_file("tests/samples/GuessingGame.class")
     # pprint(file)
-    for m in file.methods:
-        m.nice_print()
+    file.nice_print()
     assert False

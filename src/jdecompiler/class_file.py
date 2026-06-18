@@ -515,7 +515,7 @@ class SourceFileAttribute:
         constant_type, _, data = constant_pool[source_file_index]
         assert constant_type == ConstantType.UTF_8
 
-        return cls(data)
+        return cls(data.decode())
 
 
 @dataclass
@@ -983,3 +983,8 @@ class JavaClassFile:
             methods=methods,
             attributes=attributes,
         )
+
+    def nice_print(self):
+        print("Class File: " + self.attributes["SourceFile"].name)
+        for method in self.methods:
+            method.nice_print(indent=2)
