@@ -142,47 +142,139 @@ class Opcode(IntEnum):
         return str(cls._value2member_map_[value].name)
 
 
-def const_pool_get_utf8(constant_pool, index):
-    data_type, _, value = constant_pool[index]
-    assert data_type == ConstantType.UTF_8
-    return value.decode()
+class ConstantPool:
+    def __init__(self, constants):
+        self.constants = constants
 
+    def get_utf8(self, index):
+        data_type, _, value = self.constants[index]
+        assert data_type == ConstantType.UTF_8
+        return value.decode()
 
-def const_pool_get_class_ref(constant_pool, index):
-    data_type, _, value = constant_pool[index]
-    assert data_type == ConstantType.CLASS
-    return const_pool_get_utf8(constant_pool, value)
+    def get_class_ref(self, index):
+        data_type, _, value = self.constants[index]
+        assert data_type == ConstantType.CLASS
+        return self.get_utf8(value)
 
+    def get_name_and_type(self, index):
+        data_type, name_index, descriptor_index = self.constants[index]
+        assert data_type == ConstantType.NAME_AND_TYPE
+        return (
+            self.get_utf8(name_index) + " type(" + self.get_utf8(descriptor_index) + ")"
+        )
 
-def const_pool_get_name_and_type(constant_pool, index):
-    data_type, name_index, descriptor_index = constant_pool[index]
-    assert data_type == ConstantType.NAME_AND_TYPE
-    return (
-        const_pool_get_utf8(constant_pool, name_index)
-        + " type("
-        + const_pool_get_utf8(constant_pool, descriptor_index)
-        + ")"
-    )
+    def get_field_ref(self, index):
+        data_type, class_index, name_and_type = self.constants[index]
+        assert data_type == ConstantType.FIELD_REF
+        return (
+            self.get_class_ref(class_index)
+            + "."
+            + self.get_name_and_type(name_and_type)
+        )
 
+    def get_method_ref(self, index):
+        data_type, class_index, name_and_type = self.constants[index]
+        assert data_type == ConstantType.METHOD_REF
+        return (
+            self.get_class_ref(class_index)
+            + "."
+            + self.get_name_and_type(name_and_type)
+        )
 
-def const_pool_get_field_ref(constant_pool, index):
-    data_type, class_index, name_and_type = constant_pool[index]
-    assert data_type == ConstantType.FIELD_REF
-    return (
-        const_pool_get_class_ref(constant_pool, class_index)
-        + "."
-        + const_pool_get_name_and_type(constant_pool, name_and_type)
-    )
+    @classmethod
+    def read_constant_pool(cls, buffer, count):
+        enteries = {}
 
+        key = 0
+        while key < count:
+            key += 1
+            tag = JavaClassFile.read_u1(buffer)
 
-def const_pool_get_method_ref(constant_pool, index):
-    data_type, class_index, name_and_type = constant_pool[index]
-    assert data_type == ConstantType.METHOD_REF
-    return (
-        const_pool_get_class_ref(constant_pool, class_index)
-        + "."
-        + const_pool_get_name_and_type(constant_pool, name_and_type)
-    )
+            if tag == ConstantType.UTF_8:
+                # Reads a UTF-8 String
+                length = JavaClassFile.read_u2(buffer)
+                enteries[key] = (ConstantType.UTF_8, 0, buffer.read(length))
+
+            elif tag == ConstantType.DOUBLE:
+                # Reads a number of type double
+                enteries[key] = (
+                    ConstantType.DOUBLE,
+                    JavaClassFile.read_u4(buffer),
+                    JavaClassFile.read_u4(buffer),
+                )
+                # This entery taks up two constant pool enteries
+                # so the key is incremented here
+                key += 1
+
+            elif tag == ConstantType.CLASS:
+                # Class info contains a string with the name of the class
+                enteries[key] = (
+                    ConstantType.CLASS,
+                    None,
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.STRING:
+                # String points to a UTF-8 string
+                enteries[key] = (
+                    ConstantType.STRING,
+                    None,
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.FIELD_REF:
+                # Points to a class and field belonging to that class
+                enteries[key] = (
+                    ConstantType.FIELD_REF,
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.METHOD_REF:
+                # Points to a class and method belonging to that class
+                enteries[key] = (
+                    ConstantType.METHOD_REF,
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.INTERFACE_METHOD_REF:
+                # Points to a class and interface used in that class
+                enteries[key] = (
+                    ConstantType.INTERFACE_METHOD_REF,
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.NAME_AND_TYPE:
+                # Points to a string and type
+                enteries[key] = (
+                    ConstantType.NAME_AND_TYPE,
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.METHOD_HANDLE:
+                enteries[key] = (
+                    ConstantType.METHOD_HANDLE,
+                    JavaClassFile.read_u1(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            elif tag == ConstantType.INVOKE_DYNAMIC:
+                enteries[key] = (
+                    ConstantType.INVOKE_DYNAMIC,
+                    JavaClassFile.read_u2(buffer),
+                    JavaClassFile.read_u2(buffer),
+                )
+
+            else:
+                raise NotImplementedError(tag)
+
+        return cls(enteries)
+
+    def __getitem__(self, value):
+        return self.constants[value]
 
 
 @dataclass
@@ -222,11 +314,11 @@ class CodeAttribute:
             assert op_type == ConstantType.INVOKE_DYNAMIC
             instruction.operands = [
                 bootstrap_methods.get(bootstrap_idx),
-                const_pool_get_name_and_type(constant_pool, method_descriptor),
+                constant_pool.get_name_and_type(constant_pool, method_descriptor),
             ]
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         max_stack = JavaClassFile.read_u2(buffer)
         max_locals = JavaClassFile.read_u2(buffer)
         code_length = JavaClassFile.read_u4(buffer)
@@ -341,11 +433,7 @@ class CodeAttribute:
                     Instruction(
                         Opcode.INVOKE_SPECIAL,
                         current,
-                        [
-                            const_pool_get_method_ref(
-                                constant_pool, idx_byte1 << 8 | idx_byte2
-                            )
-                        ],
+                        [constant_pool.get_method_ref(idx_byte1 << 8 | idx_byte2)],
                     )
                 )
                 current += 2
@@ -457,11 +545,7 @@ class CodeAttribute:
                     Instruction(
                         Opcode.INVOKE_VIRTUAL,
                         current,
-                        [
-                            const_pool_get_method_ref(
-                                constant_pool, idx_byte1 << 8 | idx_byte2
-                            )
-                        ],
+                        [constant_pool.get_method_ref(idx_byte1 << 8 | idx_byte2)],
                     )
                 )
                 current += 2
@@ -494,11 +578,7 @@ class CodeAttribute:
                     Instruction(
                         Opcode.NEW,
                         current,
-                        [
-                            const_pool_get_class_ref(
-                                constant_pool, idx_byte1 << 8 | idx_byte2
-                            )
-                        ],
+                        [constant_pool.get_class_ref(idx_byte1 << 8 | idx_byte2)],
                     )
                 )
                 current += 2
@@ -509,11 +589,7 @@ class CodeAttribute:
                     Instruction(
                         Opcode.GET_STATIC,
                         current,
-                        [
-                            const_pool_get_field_ref(
-                                constant_pool, idx_byte1 << 8 | idx_byte2
-                            )
-                        ],
+                        [constant_pool.get_field_ref(idx_byte1 << 8 | idx_byte2)],
                     )
                 )
                 current += 2
@@ -544,7 +620,7 @@ class LineNumberTableAttribute:
                 return line_number
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         num_enteries = JavaClassFile.read_u2(buffer)
         line_numbers = []
 
@@ -566,7 +642,7 @@ class SourceFileAttribute:
     name: str
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         source_file_index = JavaClassFile.read_u2(buffer)
         constant_type, _, data = constant_pool[source_file_index]
         assert constant_type == ConstantType.UTF_8
@@ -582,7 +658,7 @@ class BootstrapMethodsAttribute:
         return self.bootstrap_methods[index]
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         num_bootstrap_methods = JavaClassFile.read_u2(buffer)
 
         bootstrap_methods = []
@@ -604,7 +680,7 @@ class InnerClassesAttribute:
     inner_classes: list
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         num_inner_classes = JavaClassFile.read_u2(buffer)
 
         inner_classes = []
@@ -630,7 +706,7 @@ class StackMapTableAttribute:
     stack_frames: list
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         # TODO calculate the stack layout given the function descriptor as too
         num_frames = JavaClassFile.read_u2(buffer)
 
@@ -730,7 +806,7 @@ class StackMapTableAttribute:
         ...
 
 
-def read_attribute(buffer: BytesIO, constant_pool: dict[int, tuple]):
+def read_attribute(buffer: BytesIO, constant_pool: ConstantPool):
     name_index = JavaClassFile.read_u2(buffer)
     name_type, _, name = constant_pool[name_index]
     assert name_type == ConstantType.UTF_8
@@ -858,7 +934,7 @@ class Method:
         return f"{access} {return_type} {name}({arguments})"
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         access_flags = JavaClassFile.read_u2(buffer)
 
         name_type, _, name = constant_pool[JavaClassFile.read_u2(buffer)]
@@ -898,7 +974,7 @@ class Field:
     attributes: dict
 
     @classmethod
-    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: dict[int, tuple]):
+    def from_buffer_and_pool(cls, buffer: BytesIO, constant_pool: ConstantPool):
         access_flags = JavaClassFile.read_u2(buffer)
         name_indx = JavaClassFile.read_u2(buffer)
         descriptor_index = JavaClassFile.read_u2(buffer)
@@ -911,10 +987,8 @@ class Field:
 
         return cls(
             access_flags=FieldAccessFlags.parse_flags(access_flags),
-            descriptor=cls.read_descriptor(
-                const_pool_get_utf8(constant_pool, descriptor_index)
-            ),
-            name=const_pool_get_utf8(constant_pool, name_indx),
+            descriptor=cls.read_descriptor(constant_pool.get_utf8(descriptor_index)),
+            name=constant_pool.get_utf8(name_indx),
             attributes=attributes,
         )
 
@@ -993,98 +1067,6 @@ class JavaClassFile:
         with open(fp, "rb") as f:
             return cls.from_buffer(f)
 
-    @staticmethod
-    def read_constant_pool(buffer, count):
-        enteries: dict[int, tuple[ConstantType, Any, Any]] = {}
-
-        key = 0
-        while key < count:
-            key += 1
-            tag = JavaClassFile.read_u1(buffer)
-
-            if tag == ConstantType.UTF_8:
-                # Reads a UTF-8 String
-                length = JavaClassFile.read_u2(buffer)
-                enteries[key] = (ConstantType.UTF_8, 0, buffer.read(length))
-
-            elif tag == ConstantType.DOUBLE:
-                # Reads a number of type double
-                enteries[key] = (
-                    ConstantType.DOUBLE,
-                    JavaClassFile.read_u4(buffer),
-                    JavaClassFile.read_u4(buffer),
-                )
-                # This entery taks up two constant pool enteries
-                # so the key is incremented here
-                key += 1
-
-            elif tag == ConstantType.CLASS:
-                # Class info contains a string with the name of the class
-                enteries[key] = (
-                    ConstantType.CLASS,
-                    None,
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.STRING:
-                # String points to a UTF-8 string
-                enteries[key] = (
-                    ConstantType.STRING,
-                    None,
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.FIELD_REF:
-                # Points to a class and field belonging to that class
-                enteries[key] = (
-                    ConstantType.FIELD_REF,
-                    JavaClassFile.read_u2(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.METHOD_REF:
-                # Points to a class and method belonging to that class
-                enteries[key] = (
-                    ConstantType.METHOD_REF,
-                    JavaClassFile.read_u2(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.INTERFACE_METHOD_REF:
-                # Points to a class and interface used in that class
-                enteries[key] = (
-                    ConstantType.INTERFACE_METHOD_REF,
-                    JavaClassFile.read_u2(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.NAME_AND_TYPE:
-                # Points to a string and type
-                enteries[key] = (
-                    ConstantType.NAME_AND_TYPE,
-                    JavaClassFile.read_u2(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.METHOD_HANDLE:
-                enteries[key] = (
-                    ConstantType.METHOD_HANDLE,
-                    JavaClassFile.read_u1(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            elif tag == ConstantType.INVOKE_DYNAMIC:
-                enteries[key] = (
-                    ConstantType.INVOKE_DYNAMIC,
-                    JavaClassFile.read_u2(buffer),
-                    JavaClassFile.read_u2(buffer),
-                )
-
-            else:
-                raise NotImplementedError(tag)
-
-        return enteries
-
     @classmethod
     def from_buffer(cls, buffer) -> Self:
         magic = buffer.read(4)
@@ -1093,15 +1075,12 @@ class JavaClassFile:
         major_version = cls.read_u2(buffer)
 
         constant_pool_count = cls.read_u2(buffer)
-        constant_pool = cls.read_constant_pool(buffer, constant_pool_count - 1)
+        constant_pool = ConstantPool.read_constant_pool(buffer, constant_pool_count - 1)
 
         access_flags = ClassAccessFlags.parse_flags(cls.read_u2(buffer))
 
-        data_type, _, this_class = constant_pool.get(cls.read_u2(buffer))
-        assert data_type == ConstantType.CLASS
-
-        data_type, _, super_class = constant_pool.get(cls.read_u2(buffer))
-        assert data_type == ConstantType.CLASS
+        this_class = constant_pool.get_class_ref(cls.read_u2(buffer))
+        super_class = constant_pool.get_class_ref(cls.read_u2(buffer))
 
         interface_count = cls.read_u2(buffer)
         interfaces: list = []
