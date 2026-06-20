@@ -81,11 +81,17 @@ class ConstantPool:
 
             elif tag == ConstantType.DOUBLE:
                 # Reads a number of type double
-                enteries[key] = (
-                    ConstantType.DOUBLE,
-                    JavaClassFile.read_u4(buffer),
-                    JavaClassFile.read_u4(buffer),
+                height_bits = JavaClassFile.read_u4(buffer)
+                low_bits = JavaClassFile.read_u4(buffer)
+                bits = (height_bits << 32) | low_bits
+                s = 1 if (bits >> 63) == 0 else -1
+                e = (bits >> 52) & 0x7FF
+                m = (
+                    ((bits & 0xFFFFFFFFFFFFF) << 1)
+                    if e == 0
+                    else ((bits & 0xFFFFFFFFFFFFF) | 0x10000000000000)
                 )
+                enteries[key] = (ConstantType.DOUBLE, s * m * 2 ** (e - 1075))
                 # This entery taks up two constant pool enteries
                 # so the key is incremented here
                 key += 1
