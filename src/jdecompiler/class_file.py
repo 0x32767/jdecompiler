@@ -123,10 +123,26 @@ class Method:
 
         return_type = descriptor_string[index + 1 :]
 
-        if return_type == "V":
+        if return_type == "B":
+            return_type = "byte"
+        elif return_type == "C":
+            return_type = "char"
+        elif return_type == "D":
+            return_type = "double"
+        elif return_type == "F":
+            return_type = "float"
+        elif return_type == "I":
+            return_type = "int"
+        elif return_type == "J":
+            return_type = "long"
+        elif return_type == "S":
+            return_type = "short"
+        elif return_type == "Z":
+            return_type = "boolean"
+        elif return_type == "V":
             return_type = "void"
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"Return type not implemented {return_type!r}")
 
         return paramiters, return_type
 

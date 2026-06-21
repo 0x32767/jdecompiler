@@ -36,26 +36,23 @@ class ConstantPool:
     def get_name_and_type(self, index):
         data_type, name_index, descriptor_index = self.constants[index]
         assert data_type == ConstantType.NAME_AND_TYPE
-        return (
-            self.get_utf8(name_index) + " type(" + self.get_utf8(descriptor_index) + ")"
-        )
+        return (self.get_utf8(name_index), self.get_utf8(descriptor_index))
 
     def get_field_ref(self, index):
         data_type, class_index, name_and_type = self.constants[index]
         assert data_type == ConstantType.FIELD_REF
-        return (
-            self.get_class_ref(class_index)
-            + "."
-            + self.get_name_and_type(name_and_type)
-        )
+        name, obj_type = self.get_name_and_type(name_and_type)
+        return (self.get_class_ref(class_index) + "." + name, obj_type)
 
     def get_method_ref(self, index):
+        from jdecompiler.class_file import Method
+
         data_type, class_index, name_and_type = self.constants[index]
         assert data_type == ConstantType.METHOD_REF
+        name, descriptor = self.get_name_and_type(name_and_type)
         return (
-            self.get_class_ref(class_index)
-            + "."
-            + self.get_name_and_type(name_and_type)
+            self.get_class_ref(class_index) + "." + name,
+            Method.read_descriptor(descriptor),
         )
 
     def get_invoke_dynamic(self, data):
