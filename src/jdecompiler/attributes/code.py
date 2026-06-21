@@ -12,6 +12,7 @@ class Opcode(IntEnum):
     NOP = 0
     ICONST_0 = 0x03
     ICONST_1 = 0x04
+    ICONST_2 = 0x05
     ICONST_4 = 0x07
     ICONST_5 = 0x08
     DCONST_0 = 0x0E
@@ -367,6 +368,8 @@ class CodeAttribute:
                 instructions.append(Instruction(Opcode.ICONST_0, current, []))
             elif instruction == Opcode.ICONST_1:
                 instructions.append(Instruction(Opcode.ICONST_1, current, []))
+            elif instruction == Opcode.ICONST_2:
+                instructions.append(Instruction(Opcode.ICONST_2, current, []))
             elif instruction == Opcode.ICONST_4:
                 instructions.append(Instruction(Opcode.ICONST_4, current, []))
             elif instruction == Opcode.LSTORE_1:
