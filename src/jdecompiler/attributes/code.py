@@ -16,6 +16,7 @@ class Opcode(IntEnum):
     ICONST_5 = 0x08
     DCONST_0 = 0x0E
     DCONST_1 = 0x0F
+    BIPUSH = 0x10
     LDC = 0x12
     LDC2_W = 0x14
     ILOAD = 0x15
@@ -234,6 +235,16 @@ class CodeAttribute:
                     )
                 )
                 current += 2
+            elif instruction == Opcode.BIPUSH:
+                byte = JavaClassFile.read_u1(buffer)
+                instructions.append(
+                    Instruction(
+                        Opcode.BIPUSH,
+                        current,
+                        [byte],
+                    )
+                )
+                current += 1
             elif instruction == Opcode.CHECK_CAST:
                 idx_byte1 = JavaClassFile.read_u1(buffer)
                 idx_byte2 = JavaClassFile.read_u1(buffer)
