@@ -15,6 +15,7 @@ class Opcode(IntEnum):
     ICONST_0 = 0x03
     ICONST_1 = 0x04
     ICONST_2 = 0x05
+    ICONST_3 = 0x06
     ICONST_4 = 0x07
     ICONST_5 = 0x08
     DCONST_0 = 0x0E
@@ -71,6 +72,27 @@ class Opcode(IntEnum):
     @classmethod
     def get_name(cls, value):
         return str(cls._value2member_map_[value].name)
+
+
+NET_STACK_CHANGE = {
+    Opcode.ICONST_1: 1,
+    Opcode.ICONST_2: 1,
+    Opcode.ICONST_3: 1,
+    Opcode.ICONST_4: 1,
+    Opcode.ICONST_5: 1,
+    Opcode.ALOAD_M1: 1,
+    Opcode.ISTORE: -1,
+    Opcode.ISTORE_1: -1,
+    Opcode.ISTORE_2: -1,
+    Opcode.ISTORE_3: -1,
+    Opcode.ILOAD_1: 1,
+    Opcode.RETURN: 0,
+    Opcode.IF_EQ: -2,
+    Opcode.IF_GE: -2,
+    Opcode.IF_ICMPNE: -2,
+    Opcode.IF_ICMPEQ: -2,
+    Opcode.IF_ICMPGE: -2,
+}
 
 
 @dataclass
@@ -172,6 +194,8 @@ class CodeAttribute:
                 instructions.append(Instruction(Opcode.ICONST_1, current, []))
             elif instruction == Opcode.ICONST_2:
                 instructions.append(Instruction(Opcode.ICONST_2, current, []))
+            elif instruction == Opcode.ICONST_3:
+                instructions.append(Instruction(Opcode.ICONST_3, current, []))
             elif instruction == Opcode.ICONST_4:
                 instructions.append(Instruction(Opcode.ICONST_4, current, []))
             elif instruction == Opcode.ICONST_5:
